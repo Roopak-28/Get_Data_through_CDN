@@ -1,0 +1,68 @@
+name: Get data through CDN
+description: Downloads dataset from a given CDN URL and outputs it as a pickled Dataset, along with weight_out.
+inputs:
+  - name: process_data_url
+    type: String
+    description: URL to fetch the dataset from.
+  - name: weight_out
+    type: String
+    description: Path to save dummy weights JSON.
+outputs:
+  - name: processed_data
+    type: Dataset
+  - name: weight_out
+    type: String
+implementation:
+  container:
+    image: python:3.9
+    command:
+      - sh
+      - -c
+      - |
+        python3 -m pip install --quiet requests pickle5 || \
+        python3 -m pip install --quiet requests pickle5 --user
+        exec "$0" "$@"
+      - python3
+      - -u
+      - -c
+      - |
+        import argparse, os, requests, pickle, json
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--process_data_url', type=str, required=True)
+        parser.add_argument('--processed_data', type=str, required=True)
+        parser.add_argument('--weight_out', type=str, required=True)
+        args = parser.parse_args()
+
+        def download_and_pickle(url, output_path):
+            try:
+                resp = requests.get(url)
+                resp.raise_for_status()
+                data = resp.content
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                with open(output_path, 'wb') as f:
+                    pickle.dump(data, f)
+                print(f"Dataset downloaded from {url} and saved as pickle at {output_path}")
+            except Exception as e:
+                print(f"Failed to download dataset from {url}: {e}")
+                raise
+
+        print(f"Fetching dataset from CDN: {args.process_data_url}")
+        download_and_pickle(args.process_data_url, args.processed_data)
+
+        # Create dummy weights JSON
+        dummy_weights = {
+            "focal_loss_alpha": 0.5,
+            "class_weights": [1.0, 1.0, 1.0]
+        }
+        os.makedirs(os.path.dirname(args.weight_out), exist_ok=True)
+        with open(args.weight_out, 'w') as f:
+            json.dump(dummy_weights, f, indent=2)
+        print(f"Dummy weights written to {args.weight_out}")
+    args:
+      - --process_data_url
+      - { inputValue: process_data_url }
+      - --processed_data
+      - { outputPath: processed_data }
+      - --weight_out
+      - { outputPath: weight_out }
