@@ -1,16 +1,16 @@
 name: Get data through CDN
-description: Downloads dataset from a given CDN URL and outputs it as a pickled Dataset, along with weight_out.
+description: Downloads dataset pickle from a CDN URL and saves it, along with a weights JSON.
 inputs:
   - name: process_data_url
     type: String
-    description: URL to fetch the dataset from.
-  - name: weight_out
+    description: URL to fetch the dataset (pickle) from.
+  - name: weights_url
     type: String
-    description: Path to save dummy weights JSON.
+    description: Path to save weights JSON.
 outputs:
   - name: processed_data
     type: Dataset
-  - name: weight_out
+  - name: weights_out
     type: String
 implementation:
   container:
@@ -19,50 +19,45 @@ implementation:
       - sh
       - -c
       - |
-        python3 -m pip install --quiet requests pickle5 || \
-        python3 -m pip install --quiet requests pickle5 --user
+        set -e
+        python3 -m pip install --quiet requests pickle5
+
         exec "$0" "$@"
       - python3
       - -u
       - -c
       - |
-        import argparse, os, requests, pickle, json
+        import argparse, os, requests
 
         parser = argparse.ArgumentParser()
         parser.add_argument('--process_data_url', type=str, required=True)
         parser.add_argument('--processed_data', type=str, required=True)
-        parser.add_argument('--weight_out', type=str, required=True)
+        parser.add_argument('--weights_url', type=str, required=True)
+        parser.add_argument('--weights_out', type=str, required=True)
         args = parser.parse_args()
 
-        def download_and_pickle(url, output_path):
-            try:
-                resp = requests.get(url)
-                resp.raise_for_status()
-                data = resp.content
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                with open(output_path, 'wb') as f:
-                    pickle.dump(data, f)
-                print(f"Dataset downloaded from {url} and saved as pickle at {output_path}")
-            except Exception as e:
-                print(f"Failed to download dataset from {url}: {e}")
-                raise
-
+        # --- Step 1: Download pickle from CDN ---
         print(f"Fetching dataset from CDN: {args.process_data_url}")
-        download_and_pickle(args.process_data_url, args.processed_data)
+        resp = requests.get(args.process_data_url)
+        resp.raise_for_status()
 
-        # Create dummy weights JSON
-        dummy_weights = {
-            "focal_loss_alpha": 0.5,
-            "class_weights": [1.0, 1.0, 1.0]
-        }
-        os.makedirs(os.path.dirname(args.weight_out), exist_ok=True)
-        with open(args.weight_out, 'w') as f:
-            json.dump(dummy_weights, f, indent=2)
-        print(f"Dummy weights written to {args.weight_out}")
+        os.makedirs(os.path.dirname(args.processed_data), exist_ok=True)
+        with open(args.processed_data, "wb") as f:
+            f.write(resp.content)
+        print(f"Dataset saved at {args.processed_data}")
+
+        # --- Step 2: Just create an empty weights_out file ---
+        os.makedirs(os.path.dirname(args.weights_out), exist_ok=True)
+        with open(args.weights_out, "w") as f:
+            f.write("")
+        print(f"Empty weights file created at {args.weights_out}")
+
     args:
       - --process_data_url
       - { inputValue: process_data_url }
       - --processed_data
       - { outputPath: processed_data }
-      - --weight_out
-      - { outputPath: weight_out }
+      - --weights_url
+      - { inputValue: weights_url }
+      - --weights_out
+      - { outputPath: weights_out }
